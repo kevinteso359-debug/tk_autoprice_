@@ -18,6 +18,7 @@ function parseLocaleNumber(value: unknown): number {
 }
 
 const localeNumber = z.preprocess((value) => parseLocaleNumber(value), z.number());
+
 const optionalLocaleNumber = z.preprocess((value) => {
   if (value === '' || value === null || value === undefined) return undefined;
   return parseLocaleNumber(value);
@@ -48,17 +49,28 @@ function normalizeNumber(value: number | undefined): number | undefined {
 }
 
 export async function GET() {
-  const mappings = await getMappings();
-  return NextResponse.json(mappings);
+  try {
+    const mappings = await getMappings();
+    return NextResponse.json(mappings);
+  } catch (error) {
+    console.error('GET /api/mappings error:', error);
+    return NextResponse.json({ error: 'Failed to load mappings' }, { status: 500 });
+  }
 }
 
 export async function POST(request: NextRequest) {
   try {
     const json = await request.json();
+    console.log('POST /api/mappings payload:', json);
+
     const parsed = schema.safeParse(json);
 
     if (!parsed.success) {
-      return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+      console.error('POST /api/mappings validation error:', parsed.error.flatten());
+      return NextResponse.json(
+        { error: parsed.error.flatten() },
+        { status: 400 }
+      );
     }
 
     const body = parsed.data;
@@ -109,23 +121,43 @@ export async function POST(request: NextRequest) {
       all.unshift(mapping);
     }
 
+    console.log('POST /api/mappings saving mapping:', mapping);
     await saveMappings(all);
+    console.log('POST /api/mappings saved successfully');
+
     return NextResponse.json(mapping);
   } catch (error) {
-    console.error('POST /api/mappings error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    console.error('POST /api/mappings unexpected error:', error);
+    return NextResponse.json(
+      {
+        error: 'Internal server error',
+        detail: error instanceof Error ? error.message : 'Unknown error'
+      },
+      { status: 500 }
+    );
   }
 }
 
 export async function DELETE(request: NextRequest) {
-  const id = new URL(request.url).searchParams.get('id');
+  try {
+    const id = new URL(request.url).searchParams.get('id');
 
-  if (!id) {
-    return NextResponse.json({ error: 'id is required' }, { status: 400 });
+    if (!id) {
+      return NextResponse.json({ error: 'id is required' }, { status: 400 });
+    }
+
+    const all = await getMappings();
+    await saveMappings(all.filter((item) => item.id !== id));
+
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    console.error('DELETE /api/mappings error:', error);
+    return NextResponse.json(
+      {
+        error: 'Internal server error',
+        detail: error instanceof Error ? error.message : 'Unknown error'
+      },
+      { status: 500 }
+    );
   }
-
-  const all = await getMappings();
-  await saveMappings(all.filter((item) => item.id !== id));
-
-  return NextResponse.json({ ok: true });
 }
