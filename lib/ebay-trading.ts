@@ -1,5 +1,3 @@
-import fetch from 'node-fetch';
-
 const ENDPOINT = 'https://api.ebay.com/ws/api.dll';
 
 function getHeaders(callName: string) {
@@ -27,13 +25,16 @@ export async function getItemPrice(itemId: string) {
   const res = await fetch(ENDPOINT, {
     method: 'POST',
     headers: getHeaders('GetItem'),
-    body
+    body,
+    cache: 'no-store'
   });
 
   const text = await res.text();
 
   const match = text.match(/<CurrentPrice[^>]*>(.*?)<\/CurrentPrice>/);
-  if (!match) throw new Error('Prezzo non trovato');
+  if (!match) {
+    throw new Error('Prezzo non trovato nella risposta eBay: ' + text);
+  }
 
   return parseFloat(match[1]);
 }
@@ -53,12 +54,13 @@ export async function updateItemPrice(itemId: string, price: number) {
   const res = await fetch(ENDPOINT, {
     method: 'POST',
     headers: getHeaders('ReviseFixedPriceItem'),
-    body
+    body,
+    cache: 'no-store'
   });
 
   const text = await res.text();
 
-  if (!text.includes('<Ack>Success</Ack>')) {
+  if (!text.includes('<Ack>Success</Ack>') && !text.includes('<Ack>Warning</Ack>')) {
     throw new Error('Errore aggiornamento prezzo: ' + text);
   }
 
