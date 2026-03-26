@@ -75,7 +75,7 @@ Il progetto include già `vercel.json` con cron ogni 2 ore.
 Se il tuo piano Vercel dovesse rifiutare cron più frequenti, passa a un piano compatibile.
 
 ## Possibili miglioramenti
-
+init
 - supporto edit mapping
 - storico prezzi per grafici
 - notifica Telegram quando il prezzo viene cambiato
