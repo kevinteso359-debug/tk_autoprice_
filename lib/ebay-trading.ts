@@ -12,7 +12,71 @@ function getHeaders(callName: string) {
   };
 }
 
-export async function getItemPrice(itemId: string) {
+export type EbayItemInfo = {
+  itemId: string;
+  title: string;
+  price: number;
+  quantity: number;
+  imageUrl?: string;
+};
+
+function decodeXml(value: string): string {
+  return value
+    .replaceAll('&amp;', '&')
+    .replaceAll('&lt;', '<')
+    .replaceAll('&gt;', '>')
+    .replaceAll('&quot;', '"')
+    .replaceAll('&#39;', "'");
+}
+
+function extractTag(xml: string, tag: string): string | undefined {
+  const cdataRegex = new RegExp(`<${tag}><!\\[CDATA\\[(.*?)\\]\\]><\\/${tag}>`, 's');
+  const normalRegex = new RegExp(`<${tag}[^>]*>(.*?)<\\/${tag}>`, 's');
+
+  const cdataMatch = xml.match(cdataRegex);
+  if (cdataMatch?.[1]) return cdataMatch[1].trim();
+
+  const normalMatch = xml.match(normalRegex);
+  if (normalMatch?.[1]) return decodeXml(normalMatch[1].trim());
+
+  return undefined;
+}
+
+function extractPrice(xml: string): number {
+  const match = xml.match(/<CurrentPrice[^>]*>(.*?)<\/CurrentPrice>/);
+  if (!match?.[1]) {
+    throw new Error('Prezzo non trovato nella risposta eBay: ' + xml);
+  }
+  return parseFloat(match[1]);
+}
+
+function extractQuantity(xml: string): number {
+  const soldMatch = xml.match(/<QuantityAvailable>(.*?)<\/QuantityAvailable>/);
+  if (soldMatch?.[1]) {
+    const parsed = parseInt(soldMatch[1], 10);
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+
+  const qtyMatch = xml.match(/<Quantity>(.*?)<\/Quantity>/);
+  if (qtyMatch?.[1]) {
+    const parsed = parseInt(qtyMatch[1], 10);
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+
+  return 0;
+}
+
+function extractImageUrl(xml: string): string | undefined {
+  const gallery = extractTag(xml, 'GalleryURL');
+  if (gallery) return gallery;
+
+  const pictureUrl = extractTag(xml, 'PictureURL');
+  if (pictureUrl) return pictureUrl;
+
+  return undefined;
+}
+
+export async function getItemInfo(itemId: string): Promise<EbayItemInfo> {
   const body = `<?xml version="1.0" encoding="utf-8"?>
   <GetItemRequest xmlns="urn:ebay:apis:eBLBaseComponents">
     <RequesterCredentials>
@@ -20,6 +84,7 @@ export async function getItemPrice(itemId: string) {
     </RequesterCredentials>
     <ItemID>${itemId}</ItemID>
     <DetailLevel>ReturnAll</DetailLevel>
+    <IncludeItemSpecifics>false</IncludeItemSpecifics>
   </GetItemRequest>`;
 
   const res = await fetch(ENDPOINT, {
@@ -31,12 +96,27 @@ export async function getItemPrice(itemId: string) {
 
   const text = await res.text();
 
-  const match = text.match(/<CurrentPrice[^>]*>(.*?)<\/CurrentPrice>/);
-  if (!match) {
-    throw new Error('Prezzo non trovato nella risposta eBay: ' + text);
+  if (!text.includes('<Ack>Success</Ack>') && !text.includes('<Ack>Warning</Ack>')) {
+    throw new Error('Errore GetItem: ' + text);
   }
 
-  return parseFloat(match[1]);
+  const title = extractTag(text, 'Title') || `Item ${itemId}`;
+  const price = extractPrice(text);
+  const quantity = extractQuantity(text);
+  const imageUrl = extractImageUrl(text);
+
+  return {
+    itemId,
+    title,
+    price,
+    quantity,
+    imageUrl
+  };
+}
+
+export async function getItemPrice(itemId: string): Promise<number> {
+  const info = await getItemInfo(itemId);
+  return info.price;
 }
 
 export async function updateItemPrice(itemId: string, price: number) {
