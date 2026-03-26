@@ -22,6 +22,26 @@ export type Mapping = {
   createdAt: string;
 };
 
+export type RunResult = {
+  id: string;
+  ok: boolean;
+  error?: string;
+  warning?: string | null;
+
+  sourcePrice?: number;
+  newPrice?: number;
+
+  sourceTitle?: string;
+  sourceQuantity?: number;
+  sourceImageUrl?: string | null;
+
+  targetTitle?: string | null;
+  targetCurrentPrice?: number | null;
+  targetImageUrl?: string | null;
+
+  sourceOutOfStock?: boolean;
+};
+
 export type RunLog = {
   id: string;
   startedAt: string;
@@ -31,14 +51,12 @@ export type RunLog = {
   ok: boolean;
 };
 
-export type RunResult = {
-  mappingId: string;
-  mappingName: string;
-  sourcePrice?: number;
-  targetPriceBefore?: number;
-  targetPriceAfter?: number;
-  status: 'updated' | 'skipped' | 'error';
-  reason: string;
+export type EbayItemInfo = {
+  itemId: string;
+  title: string;
+  price: number;
+  quantity: number;
+  imageUrl?: string;
 };
 
 export type EbayTokenResponse = {
