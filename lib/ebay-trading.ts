@@ -70,8 +70,13 @@ function extractImageUrl(xml: string): string | undefined {
   const gallery = extractTag(xml, 'GalleryURL');
   if (gallery) return gallery;
 
-  const pictureUrl = extractTag(xml, 'PictureURL');
-  if (pictureUrl) return pictureUrl;
+  const galleryPlus = extractTag(xml, 'GalleryPlusPictureURL');
+  if (galleryPlus) return galleryPlus;
+
+  const pictureMatches = [...xml.matchAll(/<PictureURL>(.*?)<\/PictureURL>/g)];
+  if (pictureMatches.length > 0 && pictureMatches[0][1]) {
+    return decodeXml(pictureMatches[0][1].trim());
+  }
 
   return undefined;
 }
@@ -104,7 +109,15 @@ export async function getItemInfo(itemId: string): Promise<EbayItemInfo> {
   const price = extractPrice(text);
   const quantity = extractQuantity(text);
   const imageUrl = extractImageUrl(text);
-
+  
+console.log('getItemInfo result ->', {
+  itemId,
+  title,
+  price,
+  quantity,
+  imageUrl
+});
+  
   return {
     itemId,
     title,
