@@ -1,138 +1,53 @@
-import {
-  getAppToken,
-  getInventoryOfferPrice,
-  getOwnTradingPrice,
-  getSourceListing,
-  getUserToken,
-  reviseTradingPrice,
-  updateInventoryOfferPrice
-} from '@/lib/ebay';
-import { appendRunLog, getMappings } from '@/lib/storage';
-import { applyDelta, clampPrice, roundPrice, makeId } from '@/lib/utils';
-import { Mapping, RunLog, RunResult } from '@/types';
+import { getItemPrice, updateItemPrice } from './ebay-trading';
+import { getMappings } from './storage';
 
-async function processMapping(mapping: Mapping, appToken: string, userToken: string): Promise<RunResult> {
-  try {
-    if (!mapping.enabled) {
-      return {
-        mappingId: mapping.id,
-        mappingName: mapping.name,
-        status: 'skipped',
-        reason: 'Mapping disabled'
-      };
-    }
-
-    const { sourcePrice } = await getSourceListing(mapping, appToken);
-    const calculated = roundPrice(
-      clampPrice(
-        applyDelta(sourcePrice, mapping.deltaMode, mapping.deltaValue),
-        mapping.minPrice,
-        mapping.maxPrice
-      ),
-      mapping.roundTo
-    );
-
-    if (mapping.targetMode === 'trading') {
-      if (!mapping.targetLegacyItemId) {
-        throw new Error('Missing target legacy item id');
-      }
-
-      const targetPriceBefore = await getOwnTradingPrice(mapping.targetLegacyItemId, userToken);
-      if (Number(targetPriceBefore.toFixed(2)) === Number(calculated.toFixed(2))) {
-        return {
-          mappingId: mapping.id,
-          mappingName: mapping.name,
-          sourcePrice,
-          targetPriceBefore,
-          targetPriceAfter: targetPriceBefore,
-          status: 'skipped',
-          reason: 'Price already aligned'
-        };
-      }
-
-      await reviseTradingPrice(mapping.targetLegacyItemId, calculated, userToken);
-      return {
-        mappingId: mapping.id,
-        mappingName: mapping.name,
-        sourcePrice,
-        targetPriceBefore,
-        targetPriceAfter: calculated,
-        status: 'updated',
-        reason: 'Trading listing revised'
-      };
-    }
-
-    if (!mapping.targetOfferId) {
-      throw new Error('Missing target offer id');
-    }
-
-    const targetPriceBefore = await getInventoryOfferPrice(mapping.targetOfferId, userToken);
-    if (Number(targetPriceBefore.toFixed(2)) === Number(calculated.toFixed(2))) {
-      return {
-        mappingId: mapping.id,
-        mappingName: mapping.name,
-        sourcePrice,
-        targetPriceBefore,
-        targetPriceAfter: targetPriceBefore,
-        status: 'skipped',
-        reason: 'Price already aligned'
-      };
-    }
-
-    await updateInventoryOfferPrice(mapping.targetOfferId, calculated, userToken);
-    return {
-      mappingId: mapping.id,
-      mappingName: mapping.name,
-      sourcePrice,
-      targetPriceBefore,
-      targetPriceAfter: calculated,
-      status: 'updated',
-      reason: 'Inventory offer updated'
-    };
-  } catch (error) {
-    return {
-      mappingId: mapping.id,
-      mappingName: mapping.name,
-      status: 'error',
-      reason: error instanceof Error ? error.message : 'Unknown error'
-    };
-  }
-}
-
-export async function runRepricer(trigger: 'manual' | 'cron'): Promise<RunLog> {
+export async function runRepricer(mode: 'manual' | 'cron') {
   const mappings = await getMappings();
-  const log: RunLog = {
-    id: makeId('run'),
-    startedAt: new Date().toISOString(),
-    trigger,
-    results: [],
-    ok: true
+
+  const results = [];
+
+  for (const m of mappings) {
+    if (!m.enabled) continue;
+
+    try {
+      const sourcePrice = await getItemPrice(m.sourceLegacyItemId);
+
+      let newPrice = sourcePrice;
+
+      if (m.deltaMode === 'fixed') {
+        newPrice = sourcePrice + m.deltaValue;
+      } else {
+        newPrice = sourcePrice * (1 + m.deltaValue / 100);
+      }
+
+      if (m.minPrice && newPrice < m.minPrice) newPrice = m.minPrice;
+      if (m.maxPrice && newPrice > m.maxPrice) newPrice = m.maxPrice;
+
+      if (m.roundTo) {
+        newPrice = Math.round(newPrice / m.roundTo) * m.roundTo;
+      }
+
+      await updateItemPrice(m.targetLegacyItemId!, newPrice);
+
+      results.push({
+        id: m.id,
+        ok: true,
+        sourcePrice,
+        newPrice
+      });
+
+    } catch (err: any) {
+      results.push({
+        id: m.id,
+        ok: false,
+        error: err.message
+      });
+    }
+  }
+
+  return {
+    mode,
+    results,
+    timestamp: new Date().toISOString()
   };
-
-  if (!mappings.length) {
-    log.results.push({
-      mappingId: 'none',
-      mappingName: 'No mappings',
-      status: 'skipped',
-      reason: 'No mappings configured'
-    });
-    log.finishedAt = new Date().toISOString();
-    await appendRunLog(log);
-    return log;
-  }
-
-  const appToken = await getAppToken();
-  const userToken = await getUserToken();
-
-  const results: RunResult[] = [];
-  for (const mapping of mappings) {
-    results.push(await processMapping(mapping, appToken, userToken));
-  }
-
-  log.results = results;
-  log.ok = !results.some((result) => result.status === 'error');
-  log.finishedAt = new Date().toISOString();
-
-  await appendRunLog(log);
-  return log;
 }
