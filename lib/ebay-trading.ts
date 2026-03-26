@@ -51,9 +51,9 @@ function extractPrice(xml: string): number {
 }
 
 function extractQuantity(xml: string): number {
-  const soldMatch = xml.match(/<QuantityAvailable>(.*?)<\/QuantityAvailable>/);
-  if (soldMatch?.[1]) {
-    const parsed = parseInt(soldMatch[1], 10);
+  const quantityAvailableMatch = xml.match(/<QuantityAvailable>(.*?)<\/QuantityAvailable>/);
+  if (quantityAvailableMatch?.[1]) {
+    const parsed = parseInt(quantityAvailableMatch[1], 10);
     if (!Number.isNaN(parsed)) return parsed;
   }
 
@@ -73,9 +73,14 @@ function extractImageUrl(xml: string): string | undefined {
   const galleryPlus = extractTag(xml, 'GalleryPlusPictureURL');
   if (galleryPlus) return galleryPlus;
 
-  const pictureMatches = [...xml.matchAll(/<PictureURL>(.*?)<\/PictureURL>/g)];
+  const pictureMatches = [...xml.matchAll(/<PictureURL[^>]*>(.*?)<\/PictureURL>/gs)];
   if (pictureMatches.length > 0 && pictureMatches[0][1]) {
     return decodeXml(pictureMatches[0][1].trim());
+  }
+
+  const fallback = xml.match(/https:\/\/i\.ebayimg\.com\/[^"<\s]+/);
+  if (fallback?.[0]) {
+    return fallback[0];
   }
 
   return undefined;
@@ -83,14 +88,14 @@ function extractImageUrl(xml: string): string | undefined {
 
 export async function getItemInfo(itemId: string): Promise<EbayItemInfo> {
   const body = `<?xml version="1.0" encoding="utf-8"?>
-  <GetItemRequest xmlns="urn:ebay:apis:eBLBaseComponents">
-    <RequesterCredentials>
-      <eBayAuthToken>${process.env.EBAY_USER_TOKEN}</eBayAuthToken>
-    </RequesterCredentials>
-    <ItemID>${itemId}</ItemID>
-    <DetailLevel>ReturnAll</DetailLevel>
-    <IncludeItemSpecifics>false</IncludeItemSpecifics>
-  </GetItemRequest>`;
+<GetItemRequest xmlns="urn:ebay:apis:eBLBaseComponents">
+  <RequesterCredentials>
+    <eBayAuthToken>${process.env.EBAY_USER_TOKEN}</eBayAuthToken>
+  </RequesterCredentials>
+  <ItemID>${itemId}</ItemID>
+  <DetailLevel>ReturnAll</DetailLevel>
+  <IncludeItemSpecifics>false</IncludeItemSpecifics>
+</GetItemRequest>`;
 
   const res = await fetch(ENDPOINT, {
     method: 'POST',
@@ -101,6 +106,8 @@ export async function getItemInfo(itemId: string): Promise<EbayItemInfo> {
 
   const text = await res.text();
 
+  console.log('GetItem raw xml snippet ->', text.slice(0, 4000));
+
   if (!text.includes('<Ack>Success</Ack>') && !text.includes('<Ack>Warning</Ack>')) {
     throw new Error('Errore GetItem: ' + text);
   }
@@ -109,15 +116,15 @@ export async function getItemInfo(itemId: string): Promise<EbayItemInfo> {
   const price = extractPrice(text);
   const quantity = extractQuantity(text);
   const imageUrl = extractImageUrl(text);
-  
-console.log('getItemInfo result ->', {
-  itemId,
-  title,
-  price,
-  quantity,
-  imageUrl
-});
-  
+
+  console.log('getItemInfo result ->', {
+    itemId,
+    title,
+    price,
+    quantity,
+    imageUrl
+  });
+
   return {
     itemId,
     title,
@@ -134,15 +141,15 @@ export async function getItemPrice(itemId: string): Promise<number> {
 
 export async function updateItemPrice(itemId: string, price: number) {
   const body = `<?xml version="1.0" encoding="utf-8"?>
-  <ReviseFixedPriceItemRequest xmlns="urn:ebay:apis:eBLBaseComponents">
-    <RequesterCredentials>
-      <eBayAuthToken>${process.env.EBAY_USER_TOKEN}</eBayAuthToken>
-    </RequesterCredentials>
-    <Item>
-      <ItemID>${itemId}</ItemID>
-      <StartPrice>${price}</StartPrice>
-    </Item>
-  </ReviseFixedPriceItemRequest>`;
+<ReviseFixedPriceItemRequest xmlns="urn:ebay:apis:eBLBaseComponents">
+  <RequesterCredentials>
+    <eBayAuthToken>${process.env.EBAY_USER_TOKEN}</eBayAuthToken>
+  </RequesterCredentials>
+  <Item>
+    <ItemID>${itemId}</ItemID>
+    <StartPrice>${price}</StartPrice>
+  </Item>
+</ReviseFixedPriceItemRequest>`;
 
   const res = await fetch(ENDPOINT, {
     method: 'POST',
