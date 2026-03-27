@@ -73,9 +73,26 @@ export default function Dashboard({
 
     for (const log of logs) {
       if (!Array.isArray(log.results)) continue;
+
       for (const result of log.results) {
         if (!map.has(result.id)) {
           map.set(result.id, result);
+        }
+      }
+    }
+
+    return map;
+  }, [logs]);
+
+  const lastRunAtByMappingId = useMemo(() => {
+    const map = new Map<string, string>();
+
+    for (const log of logs) {
+      if (!Array.isArray(log.results)) continue;
+
+      for (const result of log.results) {
+        if (!map.has(result.id)) {
+          map.set(result.id, log.finishedAt || log.startedAt);
         }
       }
     }
@@ -122,6 +139,17 @@ export default function Dashboard({
     const start = (currentPage - 1) * pageSize;
     return filteredMappings.slice(start, start + pageSize);
   }, [filteredMappings, currentPage, pageSize]);
+
+  function formatDateTime(value?: string) {
+    if (!value) return 'Mai';
+
+    const date = new Date(value);
+
+    return new Intl.DateTimeFormat('it-IT', {
+      dateStyle: 'short',
+      timeStyle: 'medium'
+    }).format(date);
+  }
 
   function startEdit(mapping: Mapping) {
     setForm({
@@ -418,12 +446,14 @@ export default function Dashboard({
               <th>Target</th>
               <th>Regola</th>
               <th>Stato</th>
+              <th>Ultimo aggiornamento</th>
               <th>Azioni</th>
             </tr>
           </thead>
           <tbody>
             {paginatedMappings.map((mapping) => {
               const lastResult = lastResultByMappingId.get(mapping.id);
+              const lastRunAt = lastRunAtByMappingId.get(mapping.id);
 
               return (
                 <tr key={mapping.id}>
@@ -537,6 +567,10 @@ export default function Dashboard({
                   </td>
 
                   <td>
+                    <span className="muted">{formatDateTime(lastRunAt)}</span>
+                  </td>
+
+                  <td>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       <button type="button" onClick={() => startEdit(mapping)} disabled={busy}>
                         Modifica
@@ -552,7 +586,7 @@ export default function Dashboard({
 
             {!paginatedMappings.length ? (
               <tr>
-                <td colSpan={7} className="muted">
+                <td colSpan={8} className="muted">
                   Nessun mapping trovato.
                 </td>
               </tr>
