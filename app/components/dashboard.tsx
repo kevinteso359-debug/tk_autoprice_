@@ -54,6 +54,9 @@ export default function Dashboard({
   const [form, setForm] = useState<any>(emptyForm);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [pageSize, setPageSize] = useState(25);
+  const [currentPage, setCurrentPage] = useState(1);
 
   async function refreshAll() {
     const [mappingsRes, logsRes] = await Promise.all([fetch('/api/mappings'), fetch('/api/logs')]);
@@ -79,6 +82,46 @@ export default function Dashboard({
 
     return map;
   }, [logs]);
+
+  const filteredMappings = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    if (!term) return mappings;
+
+    return mappings.filter((mapping) => {
+      const lastResult = lastResultByMappingId.get(mapping.id);
+
+      const mappingName = mapping.name?.toLowerCase() || '';
+      const targetTitle = lastResult?.targetTitle?.toLowerCase() || '';
+      const sourceTitle = lastResult?.sourceTitle?.toLowerCase() || '';
+      const targetId = mapping.targetLegacyItemId?.toLowerCase() || '';
+      const sourceId = mapping.sourceLegacyItemId?.toLowerCase() || '';
+
+      return (
+        mappingName.includes(term) ||
+        targetTitle.includes(term) ||
+        sourceTitle.includes(term) ||
+        targetId.includes(term) ||
+        sourceId.includes(term)
+      );
+    });
+  }, [mappings, lastResultByMappingId, searchTerm]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredMappings.length / pageSize));
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, pageSize]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  const paginatedMappings = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredMappings.slice(start, start + pageSize);
+  }, [filteredMappings, currentPage, pageSize]);
 
   function startEdit(mapping: Mapping) {
     setForm({
@@ -329,7 +372,43 @@ export default function Dashboard({
       </form>
 
       <div className="card">
-        <h2 style={{ marginTop: 0 }}>Mappings salvati</h2>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 16,
+            flexWrap: 'wrap',
+            marginBottom: 16
+          }}
+        >
+          <div>
+            <h2 style={{ marginTop: 0, marginBottom: 4 }}>Mappings salvati</h2>
+            <div className="muted">
+              Totali: {filteredMappings.length} {searchTerm ? `(filtrati da ${mappings.length})` : ''}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            <input
+              type="text"
+              placeholder="Cerca per titolo inserzione o nome..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              style={{ minWidth: 280 }}
+            />
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span className="muted">Per pagina</span>
+              <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
         <table className="table">
           <thead>
             <tr>
@@ -343,7 +422,7 @@ export default function Dashboard({
             </tr>
           </thead>
           <tbody>
-            {mappings.map((mapping) => {
+            {paginatedMappings.map((mapping) => {
               const lastResult = lastResultByMappingId.get(mapping.id);
 
               return (
@@ -372,7 +451,9 @@ export default function Dashboard({
                           border: '1px solid #ddd',
                           borderRadius: 8,
                           fontSize: 12,
-                          color: '#666'
+                          color: '#666',
+                          textAlign: 'center',
+                          padding: 4
                         }}
                       >
                         no img
@@ -469,15 +550,47 @@ export default function Dashboard({
               );
             })}
 
-            {!mappings.length ? (
+            {!paginatedMappings.length ? (
               <tr>
                 <td colSpan={7} className="muted">
-                  Nessun mapping configurato.
+                  Nessun mapping trovato.
                 </td>
               </tr>
             ) : null}
           </tbody>
         </table>
+
+        <div
+          style={{
+            marginTop: 16,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 12,
+            flexWrap: 'wrap'
+          }}
+        >
+          <div className="muted">
+            Pagina {currentPage} di {totalPages}
+          </div>
+
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage <= 1}
+            >
+              Precedente
+            </button>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage >= totalPages}
+            >
+              Successiva
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className="card">
