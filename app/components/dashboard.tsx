@@ -231,6 +231,18 @@ export default function Dashboard({
     }));
   }
 
+  function expandAllLogs() {
+    const all: Record<string, boolean> = {};
+    for (const log of logs) {
+      all[log.id] = true;
+    }
+    setOpenLogs(all);
+  }
+
+  function collapseAllLogs() {
+    setOpenLogs({});
+  }
+
   function startEdit(mapping: Mapping) {
     setForm({
       id: mapping.id,
@@ -865,19 +877,93 @@ export default function Dashboard({
       </div>
 
       <div className="card">
-        <h2 style={{ marginTop: 0 }}>Ultimi log</h2>
-        <div className="grid">
-          {logs.map((log) => (
-            <div key={log.id} className="card" style={{ padding: 14 }}>
-              <strong>
-                {log.trigger?.toUpperCase?.() || 'RUN'} • {log.ok ? 'OK' : 'ERRORI'}
-              </strong>
-              <div className="muted">{log.startedAt}</div>
-              <pre>{JSON.stringify(log.results, null, 2)}</pre>
-            </div>
-          ))}
-          {!logs.length ? <div className="muted">Nessun log disponibile.</div> : null}
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 16,
+            flexWrap: 'wrap',
+            marginBottom: showLogs ? 16 : 0
+          }}
+        >
+          <div>
+            <h2 style={{ marginTop: 0, marginBottom: 4 }}>Ultimi log</h2>
+            <div className="muted">Totali: {logs.length}</div>
+          </div>
+
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            <button type="button" onClick={() => setShowLogs((v) => !v)}>
+              {showLogs ? 'Nascondi log' : 'Mostra log'}
+            </button>
+
+            {showLogs ? (
+              <>
+                <button type="button" onClick={expandAllLogs}>
+                  Apri tutti
+                </button>
+                <button type="button" onClick={collapseAllLogs}>
+                  Chiudi tutti
+                </button>
+              </>
+            ) : null}
+          </div>
         </div>
+
+        {showLogs ? (
+          <div className="grid">
+            {logs.map((log) => {
+              const isOpen = !!openLogs[log.id];
+
+              return (
+                <div key={log.id} className="card" style={{ padding: 14 }}>
+                  <button
+                    type="button"
+                    onClick={() => toggleLog(log.id)}
+                    style={{
+                      width: '100%',
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'inherit',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      padding: 0
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: 12,
+                        flexWrap: 'wrap'
+                      }}
+                    >
+                      <div>
+                        <strong>
+                          {log.trigger?.toUpperCase?.() || 'RUN'} • {log.ok ? 'OK' : 'ERRORI'}
+                        </strong>
+                        <div className="muted">{log.startedAt}</div>
+                      </div>
+
+                      <span className="badge">
+                        {isOpen ? 'Nascondi dettagli ▲' : 'Mostra dettagli ▼'}
+                      </span>
+                    </div>
+                  </button>
+
+                  {isOpen ? (
+                    <pre style={{ marginTop: 12, overflowX: 'auto' }}>
+                      {JSON.stringify(log.results, null, 2)}
+                    </pre>
+                  ) : null}
+                </div>
+              );
+            })}
+
+            {!logs.length ? <div className="muted">Nessun log disponibile.</div> : null}
+          </div>
+        ) : null}
       </div>
     </div>
   );
