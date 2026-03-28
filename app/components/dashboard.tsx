@@ -42,6 +42,15 @@ type LogWithResults = RunLog & {
   results?: LogResult[];
 };
 
+type StockAlertItem = {
+  mappingId: string;
+  mappingName: string;
+  sourceLegacyItemId: string;
+  sourceTitle?: string;
+  sourceImageUrl?: string | null;
+  detectedAt: string;
+};
+
 export default function Dashboard({
   initialMappings,
   initialLogs
@@ -54,9 +63,18 @@ export default function Dashboard({
   const [form, setForm] = useState<any>(emptyForm);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+
   const [searchTerm, setSearchTerm] = useState('');
   const [pageSize, setPageSize] = useState(25);
   const [currentPage, setCurrentPage] = useState(1);
+
+  const [alertSearchTerm, setAlertSearchTerm] = useState('');
+  const [alertPageSize, setAlertPageSize] = useState(25);
+  const [alertCurrentPage, setAlertCurrentPage] = useState(1);
+
+  const [openLogs, setOpenLogs] = useState<Record<string, boolean>>({});
+  const [showLogs, setShowLogs] = useState(true);
+  const [showAlerts, setShowAlerts] = useState(true);
 
   async function refreshAll() {
     const [mappingsRes, logsRes] = await Promise.all([fetch('/api/mappings'), fetch('/api/logs')]);
@@ -73,7 +91,6 @@ export default function Dashboard({
 
     for (const log of logs) {
       if (!Array.isArray(log.results)) continue;
-
       for (const result of log.results) {
         if (!map.has(result.id)) {
           map.set(result.id, result);
@@ -89,7 +106,6 @@ export default function Dashboard({
 
     for (const log of logs) {
       if (!Array.isArray(log.results)) continue;
-
       for (const result of log.results) {
         if (!map.has(result.id)) {
           map.set(result.id, log.finishedAt || log.startedAt);
@@ -99,6 +115,63 @@ export default function Dashboard({
 
     return map;
   }, [logs]);
+
+  const stockAlerts = useMemo(() => {
+    const alertMap = new Map<string, StockAlertItem>();
+
+    for (const log of logs) {
+      if (!Array.isArray(log.results)) continue;
+
+      for (const result of log.results) {
+        if (!result.sourceOutOfStock) continue;
+        if (alertMap.has(result.id)) continue;
+
+        const mapping = mappings.find((m) => m.id === result.id);
+        if (!mapping) continue;
+
+        alertMap.set(result.id, {
+          mappingId: mapping.id,
+          mappingName: mapping.name,
+          sourceLegacyItemId: mapping.sourceLegacyItemId,
+          sourceTitle: result.sourceTitle,
+          sourceImageUrl: result.sourceImageUrl ?? null,
+          detectedAt: log.finishedAt || log.startedAt
+        });
+      }
+    }
+
+    return Array.from(alertMap.values());
+  }, [logs, mappings]);
+
+  const filteredAlerts = useMemo(() => {
+    const term = alertSearchTerm.trim().toLowerCase();
+    if (!term) return stockAlerts;
+
+    return stockAlerts.filter((alert) => {
+      return (
+        alert.mappingName.toLowerCase().includes(term) ||
+        (alert.sourceTitle || '').toLowerCase().includes(term) ||
+        alert.sourceLegacyItemId.toLowerCase().includes(term)
+      );
+    });
+  }, [stockAlerts, alertSearchTerm]);
+
+  const alertTotalPages = Math.max(1, Math.ceil(filteredAlerts.length / alertPageSize));
+
+  useEffect(() => {
+    setAlertCurrentPage(1);
+  }, [alertSearchTerm, alertPageSize]);
+
+  useEffect(() => {
+    if (alertCurrentPage > alertTotalPages) {
+      setAlertCurrentPage(alertTotalPages);
+    }
+  }, [alertCurrentPage, alertTotalPages]);
+
+  const paginatedAlerts = useMemo(() => {
+    const start = (alertCurrentPage - 1) * alertPageSize;
+    return filteredAlerts.slice(start, start + alertPageSize);
+  }, [filteredAlerts, alertCurrentPage, alertPageSize]);
 
   const filteredMappings = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
@@ -149,6 +222,13 @@ export default function Dashboard({
       dateStyle: 'short',
       timeStyle: 'medium'
     }).format(date);
+  }
+
+  function toggleLog(logId: string) {
+    setOpenLogs((prev) => ({
+      ...prev,
+      [logId]: !prev[logId]
+    }));
   }
 
   function startEdit(mapping: Mapping) {
@@ -265,6 +345,163 @@ export default function Dashboard({
           <span className="badge">Cron attuale: Hobby / giornaliero</span>
           {message ? <span className="badge">{message}</span> : null}
         </div>
+      </div>
+
+      <div className="card">
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 16,
+            flexWrap: 'wrap',
+            marginBottom: showAlerts ? 16 : 0
+          }}
+        >
+          <div>
+            <h2 style={{ marginTop: 0, marginBottom: 4, color: '#b42318' }}>Alert stock a 0</h2>
+            <div className="muted">
+              Totali: {filteredAlerts.length} {alertSearchTerm ? `(filtrati da ${stockAlerts.length})` : ''}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            <button type="button" onClick={() => setShowAlerts((v) => !v)}>
+              {showAlerts ? 'Nascondi pannello' : 'Mostra pannello'}
+            </button>
+
+            {showAlerts ? (
+              <>
+                <input
+                  type="text"
+                  placeholder="Cerca alert per titolo, nome o ID..."
+                  value={alertSearchTerm}
+                  onChange={(e) => setAlertSearchTerm(e.target.value)}
+                  style={{ minWidth: 280 }}
+                />
+
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span className="muted">Per pagina</span>
+                  <select value={alertPageSize} onChange={(e) => setAlertPageSize(Number(e.target.value))}>
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+                </label>
+              </>
+            ) : null}
+          </div>
+        </div>
+
+        {showAlerts ? (
+          <>
+            {paginatedAlerts.length > 0 ? (
+              <div className="grid" style={{ gap: 12 }}>
+                {paginatedAlerts.map((alert) => (
+                  <div
+                    key={alert.mappingId}
+                    style={{
+                      display: 'flex',
+                      gap: 14,
+                      alignItems: 'center',
+                      border: '1px solid rgba(180,35,24,0.25)',
+                      borderRadius: 12,
+                      padding: 12,
+                      background: 'rgba(180,35,24,0.06)'
+                    }}
+                  >
+                    {alert.sourceImageUrl ? (
+                      <img
+                        src={alert.sourceImageUrl}
+                        alt={alert.sourceTitle || alert.mappingName}
+                        style={{
+                          width: 72,
+                          height: 72,
+                          objectFit: 'contain',
+                          borderRadius: 8,
+                          background: '#fff',
+                          border: '1px solid #ddd'
+                        }}
+                      />
+                    ) : (
+                      <div
+                        style={{
+                          width: 72,
+                          height: 72,
+                          display: 'grid',
+                          placeItems: 'center',
+                          border: '1px solid #ddd',
+                          borderRadius: 8,
+                          fontSize: 12,
+                          color: '#666',
+                          background: '#fff'
+                        }}
+                      >
+                        no img
+                      </div>
+                    )}
+
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 700 }}>{alert.mappingName}</div>
+                      <div className="muted">{alert.sourceTitle || `Sorgente ${alert.sourceLegacyItemId}`}</div>
+                      <div className="muted">ID sorgente: {alert.sourceLegacyItemId}</div>
+                      <div className="muted">Rilevato: {formatDateTime(alert.detectedAt)}</div>
+                    </div>
+
+                    <div>
+                      <span
+                        style={{
+                          display: 'inline-block',
+                          padding: '8px 12px',
+                          borderRadius: 999,
+                          background: '#ffe2e2',
+                          color: '#b42318',
+                          fontWeight: 700
+                        }}
+                      >
+                        Esaurito
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="muted">Nessun alert stock a 0.</div>
+            )}
+
+            <div
+              style={{
+                marginTop: 16,
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 12,
+                flexWrap: 'wrap'
+              }}
+            >
+              <div className="muted">
+                Pagina {alertCurrentPage} di {alertTotalPages}
+              </div>
+
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => setAlertCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={alertCurrentPage <= 1}
+                >
+                  Precedente
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAlertCurrentPage((p) => Math.min(alertTotalPages, p + 1))}
+                  disabled={alertCurrentPage >= alertTotalPages}
+                >
+                  Successiva
+                </button>
+              </div>
+            </div>
+          </>
+        ) : null}
       </div>
 
       <form className="card grid" onSubmit={saveMapping}>
