@@ -5,8 +5,8 @@ function unauthorized() {
   return new NextResponse('Authentication required', {
     status: 401,
     headers: {
-      'WWW-Authenticate': 'Basic realm="Repricer"'
-    }
+      'WWW-Authenticate': 'Basic realm="Repricer"',
+    },
   });
 }
 
@@ -47,5 +47,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)']
+  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
 };
