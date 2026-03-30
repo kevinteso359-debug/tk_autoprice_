@@ -10,21 +10,37 @@ function unauthorized() {
   });
 }
 
+// 🔥 funzione compatibile EDGE (no Buffer)
+function decodeBase64(base64: string) {
+  try {
+    return atob(base64);
+  } catch {
+    return '';
+  }
+}
+
 export function middleware(request: NextRequest) {
+  // 🔐 PROTEZIONE CRON
   if (request.nextUrl.pathname.startsWith('/api/cron')) {
     const auth = request.headers.get('authorization');
+
     if (auth === `Bearer ${env.cronSecret}`) {
       return NextResponse.next();
     }
+
     return new NextResponse('Forbidden', { status: 403 });
   }
 
+  // 🔐 BASIC AUTH DASHBOARD
   const auth = request.headers.get('authorization');
+
   if (!auth?.startsWith('Basic ')) {
     return unauthorized();
   }
 
-  const decoded = Buffer.from(auth.split(' ')[1], 'base64').toString();
+  const base64 = auth.split(' ')[1];
+  const decoded = decodeBase64(base64);
+
   const [user, pass] = decoded.split(':');
 
   if (user !== env.adminUser || pass !== env.adminPass) {
