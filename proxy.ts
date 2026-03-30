@@ -10,7 +10,6 @@ function unauthorized() {
   });
 }
 
-// 🔥 funzione compatibile EDGE (no Buffer)
 function decodeBase64(base64: string) {
   try {
     return atob(base64);
@@ -19,8 +18,7 @@ function decodeBase64(base64: string) {
   }
 }
 
-export function middleware(request: NextRequest) {
-  // 🔐 PROTEZIONE CRON
+export function proxy(request: NextRequest) {
   if (request.nextUrl.pathname.startsWith('/api/cron')) {
     const auth = request.headers.get('authorization');
 
@@ -31,7 +29,6 @@ export function middleware(request: NextRequest) {
     return new NextResponse('Forbidden', { status: 403 });
   }
 
-  // 🔐 BASIC AUTH DASHBOARD
   const auth = request.headers.get('authorization');
 
   if (!auth?.startsWith('Basic ')) {
@@ -40,7 +37,6 @@ export function middleware(request: NextRequest) {
 
   const base64 = auth.split(' ')[1];
   const decoded = decodeBase64(base64);
-
   const [user, pass] = decoded.split(':');
 
   if (user !== env.adminUser || pass !== env.adminPass) {
